@@ -1,0 +1,106 @@
+**FREE
+//_________________________________________________________________
+// DIESES PROGRAMM IST EIGENTUM DER FIRMA KAPS-UNTERNEHMENSBERATUNG
+// MEISENWEG 2, 8901 EMERSACKER, 08293 / 6126
+//_______________________________________________
+
+//Compiler Option
+CTL-OPT DFTACTGRP(*NO)
+        Option(*NODEBUGIO:*srcstmt)
+        BNDDIR('KAPSBNDDIR')
+        ;
+//_______________________________________
+// ENTRY
+  DCL-PI SYV04;
+    YTAX CHAR(10);
+  END-PI;
+
+  // Interne Variable
+  DCL-S sqlCmd      VARCHAR(1000);
+  DCL-S YTA_MEMBER  CHAR(10);
+  DCL-S YTA_MEMBER_ALIAS  CHAR(16);
+  DCL-S KYTA CHAR(6);
+  DCL-S LIB CHAR(10);
+
+  /define YSYVTABLES
+  /define TOOL
+  /include QRPGLESRC,PRPROTOTYP
+  /undefine YSYVTABLES
+  /undefine TOOL
+
+  // SQL Optionen
+  exec sql set option commit = *NONE, CLOSQLCSR = *ENDMOD;
+  /////////////////////////////////////////////////////////////////////////
+  // Hauptprogramm - MAIN
+
+  IF yta105_U01LI() = 'KA001';
+  lib = 'KE';
+
+  exec sql set schema = :LIB;
+
+  exec sql
+  DECLARE get_YTA CURSOR FOR
+  SELECT SYSTEM_TABLE_MEMBER
+    from qsys2.SYSPARTITIONSTAT
+    where system_table_schema = 'KQ' and
+    System_table_name = 'QRPGLESRC'
+    and
+    (
+     (:YTAX = '' and system_table_member like 'YTA%')
+     or
+     (:YTAX <> '' and system_table_member = :YTAX)
+    );
+
+  exec sql open get_YTA;
+
+  DOU SQLCODE <> 0;
+
+    exec sql fetch get_YTA
+     into :YTA_MEMBER;
+
+    If sqlcode <> 0;
+      leave;
+    ENDIF;
+
+    // Alle YTA's werden eingelesen
+    // Auch die Sourcen, die sich nicht auf die YTA* beziehen (zb YTAARNLPV*)
+    // Beispiel KYTA waere dann in diesem fall 'AARLPV'
+    // Da es aber keine YTA's mit diesem KYTA gibt, sollte es dadurch nicht zu
+    // problemen kommen
+
+    KYTA = %SUBST(YTA_MEMBER:4:6);
+    YTA_MEMBER_ALIAS = 'Alias_' + %TRIM(YTA_MEMBER);
+
+    sqlCmd =
+        'create or replace alias '+%TRIM(YTA_MEMBER_ALIAS)+
+        ' for kq.qrpglesrc('+%TRIM(YTA_MEMBER)+')';
+    exec sql PREPARE S1 FROM :sqlCmd;
+    exec sql EXECUTE S1;
+
+    sqlCmd =
+          'insert into ysyvYTA(KYTA, BEZ, POS1, POS2) +
+        select '''+%TRIM(KYTA)+''', substring(SRCDTA, 9, 6) +
+        , (substring(SRCDTA, 30, 3) +
+        +(select (min(cast(substring(SRCDTA, 30, 3) as INTEGER)) -1) * (-1) +
+        from alias_'+%TRIM(YTA_MEMBER)+' where substring(srcdta, 6, 2) = ''D '')) +
+        , (substring(SRCDTA, 37, 3) +
+        +(select (min(cast(substring(SRCDTA, 30, 3) as INTEGER)) -1) * (-1) +
+        from '+%TRIM(YTA_MEMBER_ALIAS)+' where substring(srcdta, 6, 2) = ''D '')) +
+        from '+%TRIM(YTA_MEMBER_ALIAS)+' where +
+        substring(srcdta, 6, 2) = ''D ''';
+
+        exec sql PREPARE S2 FROM :sqlCmd;
+        exec sql EXECUTE S2;
+
+     sqlCmd =
+      'DROP alias Alias_'+%TRIM(YTA_MEMBER)+'';
+      exec sql PREPARE DROP_ALIAS FROM :sqlCmd;
+      exec sql EXECUTE DROP_ALIAS;
+
+  ENDDO;
+
+  ENDIF;
+  return;
+  //
+  /////////////////////////////////////////////////////////////////////////
+ 
