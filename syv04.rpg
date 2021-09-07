@@ -92,6 +92,11 @@ CTL-OPT DFTACTGRP(*NO)
         exec sql PREPARE S2 FROM :sqlCmd;
         exec sql EXECUTE S2;
 
+     sqlCmd =
+      'DROP alias Alias_'+%TRIM(YTA_MEMBER)+'';
+      exec sql PREPARE DROP_ALIAS FROM :sqlCmd;
+      exec sql EXECUTE DROP_ALIAS;
+
   ENDDO;
 
   ENDIF;
